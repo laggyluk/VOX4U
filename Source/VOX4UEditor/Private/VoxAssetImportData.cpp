@@ -7,6 +7,7 @@ UVoxAssetImportData::UVoxAssetImportData()
 	, bImportXForward(true)
 	, bImportXYCenter(true)
 	, Scale(10.f)
+	, bImportMaterial(true)
 {
 }
 
@@ -17,6 +18,8 @@ void UVoxAssetImportData::ToVoxImportOption(UVoxImportOption& OutVoxImportOption
 	OutVoxImportOption.bImportXYCenter = bImportXYCenter;
 	OutVoxImportOption.Scale = Scale;
 	OutVoxImportOption.BuildSettings.BuildScale3D = FVector(Scale);
+	OutVoxImportOption.bImportMaterial = bImportMaterial;
+	OutVoxImportOption.bComplexCollisionAsSimple = bComplexCollisionAsSimple;
 }
 
 void UVoxAssetImportData::FromVoxImportOption(const UVoxImportOption& VoxImportOption)
@@ -25,4 +28,6 @@ void UVoxAssetImportData::FromVoxImportOption(const UVoxImportOption& VoxImportO
 	bImportXForward = VoxImportOption.bImportXForward;
 	bImportXYCenter = VoxImportOption.bImportXYCenter;
 	Scale = VoxImportOption.Scale;
+	bImportMaterial = VoxImportOption.bImportMaterial;
+	bComplexCollisionAsSimple = VoxImportOption.bComplexCollisionAsSimple;
 }

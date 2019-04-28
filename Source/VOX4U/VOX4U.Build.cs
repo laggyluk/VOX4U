@@ -31,7 +31,7 @@ public class VOX4U : ModuleRules
 				"CoreUObject",
 				"Engine",
 				"Slate",
-				"SlateCore",
+				"SlateCore"
 			}
 		);
 

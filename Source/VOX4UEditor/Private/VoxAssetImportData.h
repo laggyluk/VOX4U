@@ -28,6 +28,12 @@ public:
 	UPROPERTY(EditAnywhere, Category = Generic)
 	float Scale;
 
+	UPROPERTY(EditAnywhere, Category = Generic)
+	bool bImportMaterial;
+
+	UPROPERTY(EditAnywhere, Category = Generic)
+	bool bComplexCollisionAsSimple;
+
 public:
 
 	UVoxAssetImportData();

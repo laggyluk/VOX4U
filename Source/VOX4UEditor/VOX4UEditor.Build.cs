@@ -36,7 +36,7 @@ public class VOX4UEditor : ModuleRules
 				"UnrealEd",
 				"MainFrame",
 				"ApexDestruction",
-			}
+            }
 		);
 
 		DynamicallyLoadedModuleNames.AddRange(

@@ -17,6 +17,7 @@
 #include "VoxAssetImportData.h"
 #include "VoxImportOption.h"
 #include "Voxel.h"
+#include "Runtime/Engine/Classes/PhysicsEngine/BodySetup.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogVoxelFactory, Log, All)
 
@@ -63,8 +64,8 @@ UClass* UVoxelFactory::ResolveSupportedClass()
 
 UObject* UVoxelFactory::FactoryCreateBinary(UClass* InClass, UObject* InParent, FName InName, EObjectFlags Flags, UObject* Context, const TCHAR* Type, const uint8*& Buffer, const uint8* BufferEnd, FFeedbackContext* Warn)
 {
-	UObject* Result = nullptr;
-	FEditorDelegates::OnAssetPreImport.Broadcast(this, InClass, InParent, InName, Type);
+	UObject* Result = nullptr;	
+	GEditor->GetEditorSubsystem<UImportSubsystem>()->BroadcastAssetPreImport(this, InClass, InParent, InName, Type);
 
 	bool bImportAll = true;
 	if (!bShowOption || ImportOption->GetImportOption(bImportAll)) {
@@ -87,8 +88,8 @@ UObject* UVoxelFactory::FactoryCreateBinary(UClass* InClass, UObject* InParent, 
 		default:
 			break;
 		}
-	}
-	FEditorDelegates::OnAssetPostImport.Broadcast(this, Result);
+	}		
+	GEditor->GetEditorSubsystem<UImportSubsystem>()->BroadcastAssetPostImport(this, Result);
 	return Result;
 }
 
@@ -192,7 +193,9 @@ UStaticMesh* UVoxelFactory::CreateStaticMesh(UObject* InParent, FName InName, EO
 	UMaterialInterface* Material = CreateMaterial(InParent, InName, Flags, Vox);
 	StaticMesh->StaticMaterials.Add(FStaticMaterial(Material));
 	BuildStaticMesh(StaticMesh, RawMesh);
-	StaticMesh->AssetImportData->Update(Vox->Filename);
+	if (ImportOption->bComplexCollisionAsSimple)
+		StaticMesh->BodySetup->CollisionTraceFlag = ECollisionTraceFlag::CTF_UseComplexAsSimple;
+	StaticMesh->AssetImportData->Update(Vox->Filename);	
 	return StaticMesh;
 }
 
@@ -204,7 +207,8 @@ USkeletalMesh* UVoxelFactory::CreateSkeletalMesh(UObject* InParent, FName InName
 		AssetImportData->FromVoxImportOption(*ImportOption);
 		SkeletalMesh->AssetImportData = AssetImportData;
 	}
-
+	if (ImportOption->bComplexCollisionAsSimple)
+		SkeletalMesh->BodySetup->CollisionTraceFlag = ECollisionTraceFlag::CTF_UseComplexAsSimple;
 	SkeletalMesh->AssetImportData->Update(Vox->Filename);
 	return SkeletalMesh;
 }
@@ -314,18 +318,21 @@ UStaticMesh* UVoxelFactory::BuildStaticMesh(UStaticMesh* OutStaticMesh, FRawMesh
 	return OutStaticMesh;
 }
 
-UMaterialInterface* UVoxelFactory::CreateMaterial(UObject* InParent, FName &InName, EObjectFlags Flags, const FVox* Vox) const
+UMaterialInterface* UVoxelFactory::CreateMaterial(UObject* InParent, FName& InName, EObjectFlags Flags, const FVox* Vox) const
 {
-	UMaterial* Material = NewObject<UMaterial>(InParent, *FString::Printf(TEXT("%s_MT"), *InName.GetPlainNameString()), Flags | RF_Public);
-	UTexture2D* Texture = NewObject<UTexture2D>(InParent, *FString::Printf(TEXT("%s_TX"), *InName.GetPlainNameString()), Flags | RF_Public);
-	if (Vox->CreateTexture(Texture, ImportOption)) {
-		Material->TwoSided = false;
-		Material->SetShadingModel(MSM_DefaultLit);
-		UMaterialExpressionTextureSample* Expression = NewObject<UMaterialExpressionTextureSample>(Material);
-		Material->Expressions.Add(Expression);
-		Material->BaseColor.Expression = Expression;
-		Expression->Texture = Texture;
-		Material->PostEditChange();
+	if (ImportOption->bImportMaterial) {
+		UMaterial* Material = NewObject<UMaterial>(InParent, *FString::Printf(TEXT("%s_MT"), *InName.GetPlainNameString()), Flags | RF_Public);
+		UTexture2D * Texture = NewObject<UTexture2D>(InParent, *FString::Printf(TEXT("%s_TX"), *InName.GetPlainNameString()), Flags | RF_Public);
+		if (Vox->CreateTexture(Texture, ImportOption)) {
+			Material->TwoSided = false;
+			Material->SetShadingModel(MSM_DefaultLit);
+			UMaterialExpressionTextureSample* Expression = NewObject<UMaterialExpressionTextureSample>(Material);
+			Material->Expressions.Add(Expression);
+			Material->BaseColor.Expression = Expression;
+			Expression->Texture = Texture;
+			Material->PostEditChange();
+		}
+		return Material;
 	}
-	return Material;
+	else return NewObject<UMaterial>(InParent);
 }

@@ -36,7 +36,7 @@ bool MonotoneMesh::CreateRawMesh(FRawMesh& OutRawMesh, const UVoxImportOption* I
 			OutRawMesh.VertexPositions[i] -= Offset;
 		}
 	}
-	OutRawMesh.CompactMaterialIndices();
+	OutRawMesh.CompactMaterialIndices();	
 	return true;
 }
 
