@@ -70,23 +70,82 @@ UObject* UVoxelFactory::FactoryCreateBinary(UClass* InClass, UObject* InParent, 
 	bool bImportAll = true;
 	if (!bShowOption || ImportOption->GetImportOption(bImportAll)) {
 		bShowOption = !bImportAll;
-		FBufferReader Reader((void*)Buffer, BufferEnd - Buffer, false);
-		FVox Vox(GetCurrentFilename(), Reader, ImportOption);
-		switch (ImportOption->VoxImportType) {
-		case EVoxImportType::StaticMesh:
-			Result = CreateStaticMesh(InParent, InName, Flags, &Vox);
-			break;
-		case EVoxImportType::SkeletalMesh:
-			Result = CreateSkeletalMesh(InParent, InName, Flags, &Vox);
-			break;
-		case EVoxImportType::DestructibleMesh:
-			Result = CreateDestructibleMesh(InParent, InName, Flags, &Vox);
-			break;
-		case EVoxImportType::Voxel:
-			Result = CreateVoxel(InParent, InName, Flags, &Vox);
-			break;
-		default:
-			break;
+		FBufferReader Reader((void*)Buffer, BufferEnd - Buffer, false);		
+		if (bImportAll)
+		{
+			FVoxFileInfo voxArch(GetVoxArchiveInfo(Reader));
+			bool importMaterials = ImportOption->bImportMaterial;
+			UMaterialInterface* mat = nullptr;
+			
+			if (voxArch.valid) for (int32 i = 0; i < voxArch.voxels.Num(); ++i) {
+				//name model either by given name in magicavoxel+index or as filename+index int
+				FName leName = InName;
+				FString modelName = voxArch.GetName(i);
+				if (modelName.IsEmpty()) modelName = FPaths::GetBaseFilename(voxArch.archiveName);
+				modelName.AppendInt(i);//in case there can be multiple models with same name in archive
+				leName = *modelName;
+
+				FVox Vox;
+				Vox.Filename = GetCurrentFilename();// modelName;
+				Vox.Size = voxArch.sizes[i];
+				Vox.Voxel = voxArch.voxels[i];
+				Vox.modelName = modelName;
+				Vox.Palette = voxArch.palette;
+				//import material only for first model if any
+				ImportOption->bImportMaterial = importMaterials && i == 0;
+
+				switch (ImportOption->VoxImportType) {
+				case EVoxImportType::StaticMesh:
+					Result = CreateStaticMesh(InParent, leName, Flags, &Vox);					
+					break;
+				case EVoxImportType::SkeletalMesh:
+					Result = CreateSkeletalMesh(InParent, leName, Flags, &Vox);
+					break;
+				case EVoxImportType::DestructibleMesh:
+					Result = CreateDestructibleMesh(InParent, leName, Flags, &Vox);
+					break;
+				case EVoxImportType::Voxel:
+					Result = CreateVoxel(InParent, leName, Flags, &Vox);
+					break;
+				default:
+					break;
+				}
+				
+				//failed attempt to assign same material to all imported meshes, prolly they need to be saved before material can be assigned
+				/*
+				if (importMaterials && i == 0) {
+					//if this is first model then save the material ref
+					UStaticMesh* mesh = Cast<UStaticMesh>(Result);
+					if (mesh)
+						mat = mesh->GetMaterial(0)->GetMaterial();
+				}
+				if (importMaterials && i > 0)
+				{
+					//for rest of models use material from first one
+					UStaticMesh* mesh = Cast<UStaticMesh>(Result);
+					if (mesh && mat)
+						mesh->SetMaterial(0, mat);
+				}*/			
+			}
+		} else
+		{
+			FVox Vox(GetCurrentFilename(), Reader, ImportOption, false);
+			switch (ImportOption->VoxImportType) {
+			case EVoxImportType::StaticMesh:
+				Result = CreateStaticMesh(InParent, InName, Flags, &Vox);
+				break;
+			case EVoxImportType::SkeletalMesh:
+				Result = CreateSkeletalMesh(InParent, InName, Flags, &Vox);
+				break;
+			case EVoxImportType::DestructibleMesh:
+				Result = CreateDestructibleMesh(InParent, InName, Flags, &Vox);
+				break;
+			case EVoxImportType::Voxel:
+				Result = CreateVoxel(InParent, InName, Flags, &Vox);
+				break;
+			default:
+				break;
+			}
 		}
 	}		
 	GEditor->GetEditorSubsystem<UImportSubsystem>()->BroadcastAssetPostImport(this, Result);
@@ -335,4 +394,170 @@ UMaterialInterface* UVoxelFactory::CreateMaterial(UObject* InParent, FName& InNa
 		return Material;
 	}
 	else return NewObject<UMaterial>(InParent);
+}
+
+FVoxFileInfo UVoxelFactory::GetVoxArchiveInfo(FArchive& Ar)
+{
+	/** Magic number ( 'V' 'O' 'X' 'space' ) and terminate */
+	ANSICHAR MagicNumber[5];
+	/** version number ( current version is 150 ) */
+	uint32 VersionNumber = 0;
+
+	Ar.Serialize(MagicNumber, 4);
+
+	FVoxFileInfo info;
+	info.archiveName = GetCurrentFilename();
+	info.versionNumber = VersionNumber;
+	info.valid = true;
+
+	if (0 != FCStringAnsi::Strncmp("VOX ", MagicNumber, 4)) {
+		UE_LOG(LogVoxelFactory, Error, TEXT("not a vox format"));
+		info.valid = false;
+	}
+	UE_LOG(LogVoxelFactory, Verbose, TEXT("MAGIC NUMBER: %s"), &MagicNumber);
+
+	Ar << VersionNumber;
+	UE_LOG(LogVoxelFactory, Display, TEXT("VERSION NUMBER: %d"), VersionNumber);
+
+	if (150 < VersionNumber) {
+		UE_LOG(LogVoxelFactory, Error, TEXT("unsupported version."));
+		info.valid = false;
+	}
+	if (!info.valid) return info;
+
+	ANSICHAR ChunkId[5] = { 0, };
+	uint32 SizeOfChunkContents;
+	uint32 TotalSizeOfChildrenChunks;
+
+	FIntVector Size;
+
+
+	do {
+		Ar.Serialize(ChunkId, 4);
+		Ar << SizeOfChunkContents;
+		Ar << TotalSizeOfChildrenChunks;
+		if (0 == FCStringAnsi::Strncmp("MAIN", ChunkId, 4)) {
+			//UE_LOG(LogVox, Display, TEXT("MAIN: "));
+		}
+		else if (0 == FCStringAnsi::Strncmp("PACK", ChunkId, 4)) {
+			//apparently this is obsolete and not used when there is scene with multiple models
+			//UE_LOG(LogVox, Display, TEXT("PACK:"));
+			int NumModels;
+			Ar << NumModels;
+			//UE_LOG(LogVox, Display, TEXT("      NumModels %d"), NumModels);
+		}
+		//nTRN = transform Node Chunk : "nTRN". we use it to read scene model name
+		else if (0 == FCStringAnsi::Strncmp("nTRN", ChunkId, 4)) {
+			/*
+			int32	: node id
+			DICT	: node attributes
+				  (_name : string)
+				  (_hidden : 0/1)
+			int32 	: child node id
+			int32 	: reserved id (must be -1)
+			int32	: layer id
+			int32	: num of frames (must be 1)
+
+			// for each frame
+			{
+			DICT	: frame attributes
+				  (_r : int8) ROTATION, see (c)
+				  (_t : int32x3) translation
+			}xN
+			*/
+			int64 posStart = Ar.Tell();
+			int32 nodeId, childId, reserverdId, layerId, frames = -1;
+			Ar << nodeId;
+			//UE_LOG(LogVox, Display, TEXT("transform chunk Id: %d"), nodeId);
+			TMap<FString, FString> attribs = FVox::ReadVoxDictionary(Ar);
+			FString modelName;
+			if (attribs.Num() > 0) {
+				FString chunkIdStr;
+				chunkIdStr.AppendChars(ANSI_TO_TCHAR(ChunkId), 5);//this is not chunk id we are looking for..
+
+				
+				modelName = *attribs.Find("_name");
+				
+			}
+			//add either empty or valid name to list
+			info.names.Add(modelName);
+			//read some more
+			Ar << childId << reserverdId << layerId << frames;
+			//UE_LOG(LogVox, Display, TEXT("childId: %d"), childId);
+			//not really interested in frame attributes but need to read them anyways
+			for (int i = 0; i < frames; i++) {
+				TMap<FString, FString> frameAttrib = FVox::ReadVoxDictionary(Ar);
+			}
+			int64 posEnd = Ar.Tell();
+			int bytesRead = posEnd - posStart;
+			int bytesRemaining = SizeOfChunkContents - bytesRead;
+
+			//debug- consume rest of remaining bytes and don't crash
+			uint8 byte;
+			for (int i = 0; i < bytesRemaining; ++i) {
+				Ar << byte;
+			}
+
+		}
+		else if (0 == FCStringAnsi::Strncmp("SIZE", ChunkId, 4)) {
+			
+			Ar << Size.X << Size.Y << Size.Z;
+			if (ImportOption->bImportXForward) {
+				int32 temp = Size.X;
+				Size.X = Size.Y;
+				Size.Y = temp;
+			}
+			//UE_LOG(LogVox, Display, TEXT("SIZE: %s"), *Size.ToString());
+			info.sizes.Add(Size);
+		}
+		else if (0 == FCStringAnsi::Strncmp("XYZI", ChunkId, 4)) {
+			uint32 NumVoxels;
+			Ar << NumVoxels;
+			//UE_LOG(LogVox, Display, TEXT("XYZI: NumVoxels=%d"), NumVoxels);
+			uint8 X, Y, Z, I;
+			TMap<FIntVector, uint8> voxel;
+			for (uint32 i = 0; i < NumVoxels; ++i) {
+				Ar << X << Y << Z << I;
+				if (ImportOption->bImportXForward) {
+					uint8 temp = X;
+					X = Size.X - Y - 1;
+					Y = Size.Y - temp - 1;
+				}
+				else {
+					X = Size.X - X - 1;
+				}
+				//UE_LOG(LogVox, Verbose, TEXT("      Voxel X=%d Y=%d Z=%d I=%d"), X, Y, Z, I);
+				//Voxel.Add(FIntVector(X, Y, Z), I);
+				voxel.Add(FIntVector(X, Y, Z), I);
+			}
+			info.voxels.Add(voxel);
+		}
+		else if (0 == FCStringAnsi::Strncmp("RGBA", ChunkId, 4)) {
+			//UE_LOG(LogVox, Verbose, TEXT("RGBA:"));
+			FColor Color;
+			for (uint32 i = 0; i < SizeOfChunkContents / 4; ++i) {
+				Ar << Color.R << Color.G << Color.B << Color.A;
+				//UE_LOG(LogVox, Verbose, TEXT("      %s"), *Color.ToString());
+				info.palette.Add(Color);
+			}
+		}
+		else if (0 == FCStringAnsi::Strncmp("MATT", ChunkId, 4)) {
+			//UE_LOG(LogVox, Warning, TEXT("Unsupported MATT chunk."));
+			//btw: * the MATT chunk is deprecated, replaced by the MATL chunk, see (4)
+			uint8 byte;
+			for (uint32 i = 0; i < SizeOfChunkContents; ++i) {
+				Ar << byte;
+			}
+		}
+		else {
+			FString UnknownChunk(ChunkId);
+			//UE_LOG(LogVox, Warning, TEXT("Unsupported chunk [ %s ]. Skipping %d byte of chunk contents."), *UnknownChunk, SizeOfChunkContents);
+			uint8 byte;
+			for (uint32 i = 0; i < SizeOfChunkContents; ++i) {
+				Ar << byte;
+			}
+		}
+	} while (!Ar.AtEnd());
+
+	return info;
 }

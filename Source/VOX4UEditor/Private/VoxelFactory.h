@@ -6,7 +6,25 @@
 #include <EditorReimportHandler.h>
 #include <Factories/Factory.h>
 #include <RawMesh.h>
+#include <Vox.h>
 #include "VoxelFactory.generated.h"
+
+//sotres info about vox archive, model names, ids..
+struct FVoxFileInfo {
+public:
+	FString archiveName;
+	uint32 versionNumber;
+	TArray<FString> names;
+	TArray<FColor> palette;
+	TArray<FIntVector> sizes;
+	TArray<TMap<FIntVector, uint8>> voxels;
+	//is this vox archive file?
+	bool valid;	
+
+	FString GetName(int32 index) {
+		if (names.Num() > index) return names[index]; else return "";
+	};
+};
 
 struct FVox;
 class UDestructibleMesh;
@@ -55,6 +73,8 @@ private:
 	UStaticMesh* BuildStaticMesh(UStaticMesh* OutStaticMesh, FRawMesh& RawMesh) const;
 
 	UMaterialInterface* CreateMaterial(UObject* InParent, FName &InName, EObjectFlags Flags, const FVox* Vox) const;
+
+	FVoxFileInfo GetVoxArchiveInfo(FArchive& Ar);
 
 protected:
 
