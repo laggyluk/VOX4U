@@ -10,7 +10,7 @@
 #include "VoxelFactory.generated.h"
 
 //sotres info about vox archive, model names, ids..
-struct FVoxFileInfo {
+struct FVoxProjectFile {
 public:
 	FString archiveName;
 	uint32 versionNumber;
@@ -73,8 +73,11 @@ private:
 	UStaticMesh* BuildStaticMesh(UStaticMesh* OutStaticMesh, FRawMesh& RawMesh) const;
 
 	UMaterialInterface* CreateMaterial(UObject* InParent, FName &InName, EObjectFlags Flags, const FVox* Vox) const;
-
-	FVoxFileInfo GetVoxArchiveInfo(FArchive& Ar);
+	
+	//returns paths for registering package mount point in same folder as file being imported
+	void GetPackagePaths(UObject* fromParentUObject, FString* outAbsPath, FString* outPackagePath) const;
+	
+	FVoxProjectFile ImportVoxProject(FArchive& Ar);
 
 protected:
 
