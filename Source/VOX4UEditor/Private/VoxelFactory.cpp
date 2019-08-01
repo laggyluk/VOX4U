@@ -76,30 +76,23 @@ UObject* UVoxelFactory::FactoryCreateBinary(UClass* InClass, UObject* InParent, 
 		{
 			FVoxProjectFile voxArch(ImportVoxProject(Reader));
 			bool importMaterials = ImportOption->bImportMaterial;
-			//UMaterialInterface* mat = nullptr;
+			UMaterialInterface* mat = nullptr;
 			TArray<UObject*> AllNewAssets;
 			UObject* asset = nullptr;
-
-			// Create Package
-			//FString pathPackage = FString("/Game/MyStaticMeshes/");
-			//FString absolutePathPackage = FPaths::GameContentDir() + "/MyStaticMeshes/";
-
-			FString assetPath;// = FPaths::GetPath(InParent->GetFName().ToString());
-			FString absPath;// = FPaths::GameContentDir().Append(assetPath);//that' not exactly right
+			FString assetPath, absPath;
 			
 			GetPackagePaths(InParent, &absPath, &assetPath);
 			FPackageName::RegisterMountPoint(*assetPath, *absPath);
 
 			if (voxArch.valid) for (int32 i = 0; i < voxArch.voxels.Num(); ++i) {
-				//name model either by given name in magicavoxel+index or as filename+index int
+				
 				FName leName = InName;
 				FString modelName = voxArch.GetName(i);
-				if (modelName.IsEmpty()) modelName = FPaths::GetBaseFilename(voxArch.archiveName);
-				//modelName.AppendInt(i);//in case there can be multiple models with same name in archive				
+				if (modelName.IsEmpty()) modelName = FPaths::GetBaseFilename(voxArch.archiveName);				
 				leName = *modelName;
 
 				FVox Vox;
-				Vox.Filename = GetCurrentFilename();// modelName;
+				Vox.Filename = GetCurrentFilename();
 				Vox.Size = voxArch.sizes[i];
 				Vox.Voxel = voxArch.voxels[i];
 				Vox.modelName = modelName;
@@ -108,42 +101,16 @@ UObject* UVoxelFactory::FactoryCreateBinary(UClass* InClass, UObject* InParent, 
 				//import material only for first model if any
 				ImportOption->bImportMaterial = importMaterials && i == 0;
 
-				/*
-				// Create Package
-				FString pathPackage = FString("/Game/MyStaticMeshes/");
-				FString absolutePathPackage = FPaths::GameContentDir() + "/MyStaticMeshes/";
-
-				FPackageName::RegisterMountPoint(*pathPackage, *absolutePathPackage);
-
-				UPackage * Package = CreatePackage(nullptr, *pathPackage);
-
-				// Create Static Mesh
-				FName StaticMeshName = MakeUniqueObjectName(Package, UStaticMesh::StaticClass(), FName(*ObjectName));
-				UStaticMesh* myStaticMesh = NewObject(Package, StaticMeshName, RF_Public | RF_Standalone);
-				*/
-				UPackage * Package = nullptr;
-
-				
+				UPackage * Package = nullptr;		
 
 				switch (ImportOption->VoxImportType) {
 				case EVoxImportType::StaticMesh:
 					{
 						leName = MakeUniqueObjectName(this, UStaticMesh::StaticClass(), leName);
 						UStaticMesh* mesh;
-						//if (Result != nullptr) {														
-							
-							Package = CreatePackage(nullptr, *(assetPath + leName.ToString()));
-							mesh = CreateStaticMesh(Package, leName, Flags | RF_Standalone, &Vox);
-							/*	}
-					
-						else 
-						{
-						//	leName = MakeUniqueObjectName(this, UStaticMesh::StaticClass(), leName);
-							mesh = CreateStaticMesh(InParent, leName, Flags | RF_Standalone, &Vox);
-						}
-						*/
-						asset = mesh;
-						
+						Package = CreatePackage(nullptr, *(assetPath + leName.ToString()));
+						mesh = CreateStaticMesh(Package, leName, Flags | RF_Standalone, &Vox);						
+						asset = mesh;						
 					}
 					break;
 				case EVoxImportType::SkeletalMesh:
@@ -167,9 +134,8 @@ UObject* UVoxelFactory::FactoryCreateBinary(UClass* InClass, UObject* InParent, 
 				asset->PostEditChange();
 				if (Package) Package->MarkPackageDirty();
 				AllNewAssets.Add(asset);
-
-				//GEditor->GetEditorSubsystem<UImportSubsystem>()->BroadcastAssetPostImport(this, Result);
-				//failed attempt to assign same material to all imported meshes, prolly they need to be saved before material can be assigned
+				
+				//attempt to assign same material to all imported meshes, prolly they need to be saved before material can be assigned				
 				/*
 				if (importMaterials && i == 0) {
 					//if this is first model then save the material ref
@@ -181,34 +147,13 @@ UObject* UVoxelFactory::FactoryCreateBinary(UClass* InClass, UObject* InParent, 
 				{
 					//for rest of models use material from first one
 					UStaticMesh* mesh = Cast<UStaticMesh>(Result);
-					if (mesh && mat)
+					if (mesh && mat) {
+						mesh->StaticMaterials.Add(mat);
 						mesh->SetMaterial(0, mat);
-				}*/									
-			}
-			/*
-			for (auto ItAsset = AllNewAssets.CreateIterator(); ItAsset; ++ItAsset)
-			{
-				UObject *AssetObject = *ItAsset;
-				if (AssetObject)
-				{
-					if (Result == nullptr)
-					{
-						//Set the first import object as the return object to prevent false error from the caller of this factory
-						Result = AssetObject;
-					}
-					if (AssetObject->IsA(UStaticMesh::StaticClass()) || AssetObject->IsA(USkeletalMesh::StaticClass()))
-					{
-						if (AssetObject != Result) {
-							FAssetRegistryModule::AssetCreated(AssetObject);
-							AssetObject->MarkPackageDirty();
-						}
-						//Mark the mesh as modified so the render will draw the mesh correctly
-						AssetObject->Modify();
-						AssetObject->PostEditChange();
 					}
 				}
-
-			}*/			
+				*/
+			}					
 		} else
 		{
 			FVox Vox(GetCurrentFilename(), Reader, ImportOption, false);
@@ -463,17 +408,15 @@ UMaterialInterface* UVoxelFactory::CreateMaterial(UObject* InParent, FName& InNa
 {
 	if (ImportOption->bImportMaterial) {
 
-		FString assetPath;// = FPaths::GetPath(InParent->GetFName().ToString());
-		FString absPath;//  = FPaths::GameContentDir().Append(assetPath);//that' not exactly right
+		FString assetPath, absPath;
 
 		GetPackagePaths(InParent, &absPath, &assetPath);
 		UPackage* matPackage = CreatePackage(nullptr, *(assetPath + InName.ToString() + FString::Printf(TEXT("%s_MT"))));
-		UMaterial* Material = NewObject<UMaterial>(matPackage, *FString::Printf(TEXT("%s_MT"), *InName.GetPlainNameString()), Flags | RF_Public);
+		UMaterial* Material = NewObject<UMaterial>(matPackage, *FString::Printf(TEXT("%s_MT"), *InName.GetPlainNameString()), Flags | RF_Public | RF_Standalone);
 
 		UPackage* texPackage = CreatePackage(nullptr, *(assetPath + InName.ToString() + FString::Printf(TEXT("%s_TX"))));
-		UTexture2D * Texture = NewObject<UTexture2D>(texPackage, *FString::Printf(TEXT("%s_TX"), *InName.GetPlainNameString()), Flags | RF_Public);
-		//UMaterial* Material = NewObject<UMaterial>(InParent, *FString::Printf(TEXT("%s_MT"), *InName.GetPlainNameString()), Flags | RF_Public);
-		//UTexture2D * Texture = NewObject<UTexture2D>(InParent, *FString::Printf(TEXT("%s_TX"), *InName.GetPlainNameString()), Flags | RF_Public);
+		UTexture2D * Texture = NewObject<UTexture2D>(texPackage, *FString::Printf(TEXT("%s_TX"), *InName.GetPlainNameString()), Flags | RF_Public | RF_Standalone);
+		
 		if (Vox->CreateTexture(Texture, ImportOption)) {
 			Material->TwoSided = false;
 			Material->SetShadingModel(MSM_DefaultLit);
@@ -489,7 +432,7 @@ UMaterialInterface* UVoxelFactory::CreateMaterial(UObject* InParent, FName& InNa
 		}
 		return Material;
 	}
-	else return NewObject<UMaterial>(InParent);
+	else return NewObject<UMaterial>();
 }
 
 void UVoxelFactory::GetPackagePaths(UObject * fromParentUObject, FString * outAbsPath, FString * outPackagePath) const
